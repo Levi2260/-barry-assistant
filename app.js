@@ -1,1 +1,216 @@
-const $=id=>document.getElementById(id);let mode=localStorage.mode||'personal',msgs=JSON.parse(localStorage.msgs||'[]'),notes=JSON.parse(localStorage.notes||'[]');const info={personal:['PERSONAL MODE','Your space','I’m Barry. Your ideas, plans, and next moves start here.'],work:['WORK MODE','Get things moving','Let’s organize the work and make the next step clear.'],creative:['CREATIVE MODE','Make something matter','Let’s develop the idea and shape the vision.'],engineering:['ENGINEERING MODE','Think it through','We can explore designs, systems, materials, and safe prototypes.'],omnitrix:['OMNITRIX MODE','Concept interface','A command center for the D.A. Omnitrix concept.']};function setMode(m){mode=m;localStorage.mode=m;document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));$('modeLabel').textContent=info[m][0];$('modeTitle').textContent=info[m][1];$('welcome').querySelector('p').textContent=info[m][2];$('sidebar').classList.remove('open')}function render(){const box=$('messages');box.innerHTML='';$('welcome').style.display=msgs.length?'none':'block';msgs.forEach(m=>{let row=document.createElement('div');row.className='msg '+m.role;let a=document.createElement('div');a.className='avatar';a.textContent=m.role==='user'?'Y':'B';let b=document.createElement('div');b.className='bubble';b.textContent=m.content;row.append(a,b);box.append(row)});localStorage.msgs=JSON.stringify(msgs)}function send(t){let v=(t||$('input').value).trim();if(!v)return;msgs.push({role:'user',content:v});$('input').value='';render();alert('Message saved. Barry’s AI connection has not been added yet.')}document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));$('form').onsubmit=e=>{e.preventDefault();send()};$('input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}};document.querySelectorAll('.suggest button').forEach(b=>b.onclick=()=>send(b.textContent));$('new').onclick=()=>{msgs=[];render()};$('menu').onclick=()=>$('sidebar').classList.toggle('open');$('memory').onclick=()=>{$('notes').showModal();renderNotes()};$('close').onclick=()=>$('notes').close();$('save').onclick=()=>{let n=$('note').value.trim();if(n){notes.unshift(n);localStorage.notes=JSON.stringify(notes);$('note').value='';renderNotes()}};function renderNotes(){$('noteList').innerHTML='';notes.forEach((n,i)=>{let d=document.createElement('div');d.className='note';let s=document.createElement('span');s.textContent=n;let x=document.createElement('button');x.textContent='Remove';x.onclick=()=>{notes.splice(i,1);localStorage.notes=JSON.stringify(notes);renderNotes()};d.append(s,x);$('noteList').append(d)})}$('clear').onclick=()=>{if(confirm('Clear all notes?')){notes=[];localStorage.notes='[]';renderNotes()}};$('voice').onclick=()=>{let SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert('Voice input is not supported here.');return}let r=new SR();r.lang='en-US';r.onresult=e=>$('input').value=e.results[0][0].transcript;r.start()};setMode(mode);render();
+const BARRY_API = "https://late-wave-93ec.sc7hzvrv9s.workers.dev/chat";
+
+const $ = id => document.getElementById(id);
+
+let mode = localStorage.mode || "personal";
+let msgs = JSON.parse(localStorage.msgs || "[]");
+let notes = JSON.parse(localStorage.notes || "[]");
+
+const info = {
+  personal: ["PERSONAL MODE", "Your space", "I'm Barry. Your ideas, plans, and next moves start here."],
+  work: ["WORK MODE", "Get things moving", "Let's organize the work and make the next step clear."],
+  creative: ["CREATIVE MODE", "Make something matter", "Let's develop the idea and shape the vision."],
+  engineering: ["ENGINEERING MODE", "Think it through", "We can explore designs, systems, materials, and safe prototypes."],
+  omnitrix: ["OMNITRIX MODE", "Concept interface", "A command center for the D.A. Omnitrix concept."]
+};
+
+function setMode(m) {
+  mode = m;
+  localStorage.mode = m;
+
+  document.querySelectorAll("[data-mode]").forEach(b =>
+    b.classList.toggle("active", b.dataset.mode === m)
+  );
+
+  $("modeLabel").textContent = info[m][0];
+  $("modeTitle").textContent = info[m][1];
+  $("welcome").querySelector("p").textContent = info[m][2];
+  $("sidebar").classList.remove("open");
+}
+
+function render() {
+  const box = $("messages");
+  box.innerHTML = "";
+  $("welcome").style.display = msgs.length ? "none" : "block";
+
+  msgs.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "msg " + m.role;
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = m.role === "user" ? "Y" : "B";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = m.content;
+
+    row.append(avatar, bubble);
+    box.append(row);
+  });
+
+  localStorage.msgs = JSON.stringify(msgs);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function send(t) {
+  const input = $("input");
+  const v = (t || input.value).trim();
+
+  if (!v) return;
+
+  const previousHistory = msgs.map(m => ({
+    role: m.role === "user" ? "user" : "model",
+    text: m.content
+  }));
+
+  msgs.push({ role: "user", content: v });
+  input.value = "";
+  render();
+
+  const button = $("form").querySelector("button[type='submit']");
+  if (button) button.disabled = true;
+  input.disabled = true;
+
+  const waiting = {
+    role: "assistant",
+    content: "Thinking..."
+  };
+
+  msgs.push(waiting);
+  render();
+
+  try {
+    const response = await fetch(BARRY_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: v,
+        mode: mode,
+        history: previousHistory
+      })
+    });
+
+    const data = await response.json();
+
+    msgs.pop();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Barry couldn't connect.");
+    }
+
+    msgs.push({
+      role: "assistant",
+      content: data.reply || "I received your message, but got an empty response."
+    });
+
+  } catch (error) {
+    msgs.pop();
+    msgs.push({
+      role: "assistant",
+      content: "I couldn't connect right now. " + error.message
+    });
+  }
+
+  input.disabled = false;
+  if (button) button.disabled = false;
+  render();
+  input.focus();
+}
+
+document.querySelectorAll("[data-mode]").forEach(b =>
+  b.onclick = () => setMode(b.dataset.mode)
+);
+
+$("form").onsubmit = e => {
+  e.preventDefault();
+  send();
+};
+
+$("input").onkeydown = e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+};
+
+document.querySelectorAll(".suggest button").forEach(b =>
+  b.onclick = () => send(b.textContent)
+);
+
+$("new").onclick = () => {
+  msgs = [];
+  render();
+};
+
+$("menu").onclick = () =>
+  $("sidebar").classList.toggle("open");
+
+$("memory").onclick = () => {
+  $("notes").showModal();
+  renderNotes();
+};
+
+$("close").onclick = () => $("notes").close();
+
+$("save").onclick = () => {
+  const n = $("note").value.trim();
+
+  if (n) {
+    notes.unshift(n);
+    localStorage.notes = JSON.stringify(notes);
+    $("note").value = "";
+    renderNotes();
+  }
+};
+
+function renderNotes() {
+  $("noteList").innerHTML = "";
+
+  notes.forEach((n, i) => {
+    const d = document.createElement("div");
+    d.className = "note";
+
+    const s = document.createElement("span");
+    s.textContent = n;
+
+    const x = document.createElement("button");
+    x.textContent = "Remove";
+
+    x.onclick = () => {
+      notes.splice(i, 1);
+      localStorage.notes = JSON.stringify(notes);
+      renderNotes();
+    };
+
+    d.append(s, x);
+    $("noteList").append(d);
+  });
+}
+
+$("clear").onclick = () => {
+  if (confirm("Clear all notes?")) {
+    notes = [];
+    localStorage.notes = "[]";
+    renderNotes();
+  }
+};
+
+$("voice").onclick = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SR) {
+    alert("Voice input is not supported here.");
+    return;
+  }
+
+  const r = new SR();
+  r.lang = "en-US";
+  r.onresult = e => {
+    $("input").value = e.results[0][0].transcript;
+  };
+  r.start();
+};
+
+setMode(mode);
+render();
